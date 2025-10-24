@@ -139,7 +139,7 @@ export const SignInView = () => {
                                 </div>
                                 {!!error && (
                                     <Alert className="bg-destructive/10 border-none">
-                                        <OctagonAlertIcon className="h-4 w-4 !text-destructive" />
+                                        <OctagonAlertIcon className="h-4 w-4 text-destructive!" />
                                         <AlertTitle>{error}</AlertTitle>
                                     </Alert>
                                 )}
@@ -185,7 +185,7 @@ export const SignInView = () => {
                         </form>
                     </Form>
 
-                    <div className="bg-radial from-green-700 to-green-900 relative hidden md:flex flex-col gap-y-4 items-center justify-center">
+                    <div className="bg-radial from-sidebar-accent to-sidebar relative hidden md:flex flex-col gap-y-4 items-center justify-center">
                         <Image
                             src="/logo.svg"
                             alt="Meet.AI Logo"
