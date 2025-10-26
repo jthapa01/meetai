@@ -10,7 +10,7 @@ const Layout = ({ children }: Props) => {
     return (
         <SidebarProvider>
             <DashboardSidebar />
-            <main className="flex flex-1 flex-col md:pl-64">
+            <main className="flex flex-col h-screen w-screen bg-muted">
                 <DashboardNavbar />
                 {children}
             </main>
