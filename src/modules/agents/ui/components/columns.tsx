@@ -4,9 +4,10 @@ import { ColumnDef } from "@tanstack/react-table";
 import { CornerDownRightIcon, VideoIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { GeneratedAvatar } from "@/components/generated-avatar";
-import { AgentGetOne } from "../../types";
+import { AgentsGetMany } from "../../types";
 
-export const columns: ColumnDef<AgentGetOne>[] = [
+// AgentsGetMany[number] means atype of a single agent object
+export const columns: ColumnDef<AgentsGetMany[number]>[] = [
     {
         accessorKey: "name",
         header: "Agent Name",
