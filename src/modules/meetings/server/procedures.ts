@@ -4,7 +4,12 @@ import { and, count, desc, eq, getTableColumns, ilike, sql } from "drizzle-orm";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { db } from "@/db";
 import { agents, meetings } from "@/db/schema";
-import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE, } from "@/constants";
+import {
+  DEFAULT_PAGE,
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  MIN_PAGE_SIZE,
+} from "@/constants";
 import { meetingInsertSchema, meetingUpdateSchema } from "../schemas";
 import { MeetingStatus } from "../types";
 import { generateAvatarUri } from "@/lib/avatar";
@@ -12,42 +17,59 @@ import { streamVideo } from "@/lib/stream-video";
 
 export const meetingsRouter = createTRPCRouter({
   generateToken: protectedProcedure.mutation(async ({ ctx }) => {
-    await streamVideo.upsertUsers([
-      {
-        id: ctx.auth.user.id,
-        name: ctx.auth.user.name,
-        role: "admin",
-        image: ctx.auth.user.image ?? generateAvatarUri({ seed: ctx.auth.user.name, variant: "initials" }),
-      },
-    ]);
+    try {
+      console.log("Generating token for user:", ctx.auth.user.id);
 
-    const expirationTime = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
-    const issuedAt = Math.floor(Date.now() / 1000) - 60; // 1 minute ago
+      await streamVideo.upsertUsers([
+        {
+          id: ctx.auth.user.id,
+          name: ctx.auth.user.name,
+          role: "admin",
+          image:
+            ctx.auth.user.image ??
+            generateAvatarUri({
+              seed: ctx.auth.user.name,
+              variant: "initials",
+            }),
+        },
+      ]);
 
-    const token = streamVideo.generateUserToken({
-      user_id: ctx.auth.user.id,
-      exp: expirationTime,
-      iat: issuedAt // this is iat
-    });
-    return token;
-  }),
-  remove: protectedProcedure
-  .input(z.object({ id: z.string() }))
-  .mutation(async ({ input, ctx }) => {
-    const [deletedMeeting] = await db
-      .delete(meetings)
-      .where(
-        and(eq(meetings.id, input.id), eq(meetings.userId, ctx.auth.user.id))
-      )
-      .returning();
-    if (!deletedMeeting) {
+      const expirationTime = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const issuedAt = Math.floor(Date.now() / 1000); // Current time - fixed timing issue
+
+      const token = streamVideo.generateUserToken({
+        user_id: ctx.auth.user.id,
+        exp: expirationTime,
+        iat: issuedAt,
+      });
+
+      console.log("Token generated successfully for user:", ctx.auth.user.id);
+      return token;
+    } catch (error) {
+      console.error("Token generation failed:", error);
       throw new TRPCError({
-        code: "NOT_FOUND",
-        message: `Meeting with id ${input.id} not found`,
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to generate authentication token",
       });
     }
-    return deletedMeeting;
   }),
+  remove: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const [deletedMeeting] = await db
+        .delete(meetings)
+        .where(
+          and(eq(meetings.id, input.id), eq(meetings.userId, ctx.auth.user.id))
+        )
+        .returning();
+      if (!deletedMeeting) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Meeting with id ${input.id} not found`,
+        });
+      }
+      return deletedMeeting;
+    }),
   update: protectedProcedure
     .input(meetingUpdateSchema)
     .mutation(async ({ input, ctx }) => {
@@ -66,9 +88,11 @@ export const meetingsRouter = createTRPCRouter({
       }
       return updatedMeeting;
     }),
-    create: protectedProcedure
+  create: protectedProcedure
     .input(meetingInsertSchema)
     .mutation(async ({ input, ctx }) => {
+      console.log("Creating meeting with input:", input);
+
       const [createdMeeting] = await db
         .insert(meetings)
         .values({
@@ -76,33 +100,59 @@ export const meetingsRouter = createTRPCRouter({
           userId: ctx.auth.user.id,
         })
         .returning();
-      const call = streamVideo.video.call("default", createdMeeting.id);
-      await call.create({
-        data: {
-          created_by_id: ctx.auth.user.id,
-          custom: {
-            meetingId: createdMeeting.id,
-            meetingName: createdMeeting.name,
-          },
-          settings_override : {
-            transcription: {
-              language: "en",
-              mode: "auto-on",
-              closed_caption_mode: "auto-on",
+
+      console.log("Meeting created in database:", createdMeeting.id);
+
+      try {
+        console.log(
+          "Creating Stream Video call for meeting:",
+          createdMeeting.id
+        );
+        console.log("Stream Video client available:", !!streamVideo);
+
+        const call = streamVideo.video.call("default", createdMeeting.id);
+        await call.create({
+          data: {
+            created_by_id: ctx.auth.user.id,
+            custom: {
+              meetingId: createdMeeting.id,
+              meetingName: createdMeeting.name,
             },
-            recording: {
-              mode: "auto-on",
-              quality: "1080p"
-            }
-          }
-        }
-      });
+            settings_override: {
+              transcription: {
+                language: "en",
+                mode: "auto-on",
+                closed_caption_mode: "auto-on",
+              },
+              recording: {
+                mode: "auto-on",
+                quality: "1080p",
+              },
+            },
+          },
+        });
+
+        console.log(
+          "Stream Video call created successfully:",
+          createdMeeting.id
+        );
+      } catch (error) {
+        console.error("Stream Video call creation failed:", error);
+
+        // Clean up the database meeting if call creation fails
+        await db.delete(meetings).where(eq(meetings.id, createdMeeting.id));
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create video call. Please try again.",
+        });
+      }
 
       const [existingAgent] = await db
         .select()
         .from(agents)
         .where(eq(agents.id, createdMeeting.agentId));
-        
+
       if (!existingAgent) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -115,10 +165,13 @@ export const meetingsRouter = createTRPCRouter({
           id: existingAgent.id,
           name: existingAgent.name,
           role: "user",
-          image: generateAvatarUri({ seed: existingAgent.name, variant: "botttsNeutral" }),
+          image: generateAvatarUri({
+            seed: existingAgent.name,
+            variant: "botttsNeutral",
+          }),
         },
       ]);
-      
+
       return createdMeeting;
     }),
   getOne: protectedProcedure
@@ -128,7 +181,9 @@ export const meetingsRouter = createTRPCRouter({
         .select({
           ...getTableColumns(meetings),
           agents: agents,
-          duration: sql<number>`EXTRACT(EPOCH FROM (ended_at - started_at))`.as("duration"),
+          duration: sql<number>`EXTRACT(EPOCH FROM (ended_at - started_at))`.as(
+            "duration"
+          ),
         })
         .from(meetings)
         .innerJoin(agents, eq(meetings.agentId, agents.id))
@@ -154,14 +209,15 @@ export const meetingsRouter = createTRPCRouter({
           .default(DEFAULT_PAGE_SIZE),
         search: z.string().nullish(),
         agentId: z.string().nullish(),
-        status: z.enum([
-          MeetingStatus.Upcoming,
-          MeetingStatus.Active,
-          MeetingStatus.Completed,
-          MeetingStatus.Processing,
-          MeetingStatus.Cancelled,
-        ])
-        .nullish(),
+        status: z
+          .enum([
+            MeetingStatus.Upcoming,
+            MeetingStatus.Active,
+            MeetingStatus.Completed,
+            MeetingStatus.Processing,
+            MeetingStatus.Cancelled,
+          ])
+          .nullish(),
       })
     )
     .query(async ({ input, ctx }) => {
@@ -170,7 +226,9 @@ export const meetingsRouter = createTRPCRouter({
         .select({
           ...getTableColumns(meetings),
           agent: agents,
-          duration: sql<number>`EXTRACT(EPOCH FROM (ended_at - started_at))`.as("duration"),
+          duration: sql<number>`EXTRACT(EPOCH FROM (ended_at - started_at))`.as(
+            "duration"
+          ),
         })
         .from(meetings)
         .innerJoin(agents, eq(meetings.agentId, agents.id))
