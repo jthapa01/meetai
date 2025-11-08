@@ -4,6 +4,30 @@ import { format } from "date-fns";
 import humanizeDuration from "humanize-duration";
 import { ColumnDef } from "@tanstack/react-table";
 import { CircleCheckIcon, CircleXIcon, ClockArrowUpIcon, ClockFadingIcon, CornerDownRightIcon, LoaderIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+
+// Safe date formatter that prevents hydration mismatches
+function SafeDateFormat({ date, formatString }: { date: Date | string | null; formatString: string }) {
+    const [formattedDate, setFormattedDate] = useState<string>("");
+    const [isClient, setIsClient] = useState(false);
+
+    useEffect(() => {
+        setIsClient(true);
+        if (date) {
+            // Convert string dates to Date objects if needed
+            const dateObj = typeof date === 'string' ? new Date(date) : date;
+            if (dateObj instanceof Date && !isNaN(dateObj.getTime())) {
+                setFormattedDate(format(dateObj, formatString));
+            }
+        }
+    }, [date, formatString]);
+
+    if (!isClient || !date) {
+        return <span className="text-sm text-muted-foreground">--</span>;
+    }
+
+    return <span className="text-sm text-muted-foreground">{formattedDate}</span>;
+}
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { GeneratedAvatar } from "@/components/generated-avatar";
@@ -43,7 +67,7 @@ export const columns: ColumnDef<MeetingGetMany[number]>[] = [
                         <span className="text-sm text-muted-foreground maz-w-[200px] truncate capitalize">{row.original.agent.name}</span>
                     </div>
                     <GeneratedAvatar variant="botttsNeutral" seed={row.original.agent.name} className="size-4" />
-                    <span className="text-sm text-muted-foreground">{row.original.startedAt ? format(row.original.startedAt, "MMM d") : ""}</span>
+                    <SafeDateFormat date={row.original.startedAt} formatString="MMM d" />
                 </div>
             </div>
         ),
@@ -61,7 +85,7 @@ export const columns: ColumnDef<MeetingGetMany[number]>[] = [
                         color
                     )}
                 >
-                    <Icon 
+                    <Icon
                         className={cn(row.original.status === "processing" && "animate-spin")}
                     />
                     {row.original.status}
