@@ -50,6 +50,18 @@ export function TRPCReactProvider(props: Readonly<{ children: React.ReactNode; }
                 httpBatchLink({
                     // transformer: superjson, <-- if you use a data transformer
                     url: getUrl(),
+                    headers() {
+                        return {
+                            // Forward cookies and other headers for authentication
+                            ...(typeof window === "undefined" ? {} : {}), // No additional headers needed on client
+                        };
+                    },
+                    fetch(url, options) {
+                        return fetch(url, {
+                            ...options,
+                            credentials: "include", // Include cookies for authentication
+                        });
+                    },
                 }),
             ],
         }),
