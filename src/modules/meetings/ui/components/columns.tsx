@@ -1,10 +1,13 @@
 "use client"
 
 import { format } from "date-fns";
-import humanizeDuration from "humanize-duration";
 import { ColumnDef } from "@tanstack/react-table";
 import { CircleCheckIcon, CircleXIcon, ClockArrowUpIcon, ClockFadingIcon, CornerDownRightIcon, LoaderIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { cn, formatDuration } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { GeneratedAvatar } from "@/components/generated-avatar";
+import { MeetingGetMany } from "../../types";
 
 // Safe date formatter that prevents hydration mismatches
 function SafeDateFormat({ date, formatString }: { date: Date | string | null; formatString: string }) {
@@ -27,15 +30,6 @@ function SafeDateFormat({ date, formatString }: { date: Date | string | null; fo
     }
 
     return <span className="text-sm text-muted-foreground">{formattedDate}</span>;
-}
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import { GeneratedAvatar } from "@/components/generated-avatar";
-import { MeetingGetMany } from "../../types";
-
-function formatDuration(seconds: number) {
-    // shows only the largest unit (e.g., "2h", "5m", "30s")
-    return humanizeDuration(seconds * 1000, { largest: 1, round: true, units: ["h", "m", "s"] });
 }
 
 const statusIconMap = {
