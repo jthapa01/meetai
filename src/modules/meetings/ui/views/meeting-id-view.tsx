@@ -51,7 +51,7 @@ export const MeetingIdView = ({ meetingId }: Props) => {
     const isProcessing = data.status === "processing";
     const isCompleted = data.status === "completed";
 
-    return(
+    return (
         <>
             <RemoveConfirmation />
             <UpdateMeetingDialog
@@ -70,7 +70,7 @@ export const MeetingIdView = ({ meetingId }: Props) => {
                 {isProcessing && <ProcessingState />}
                 {isCompleted && <div>Completed</div>}
                 {isActive && <ActiveState meetingId={meetingId} />}
-                {isUpcoming && <UpcomingState meetingId={meetingId} onCancelMeeting={() => {}} isCancelling={false} />}
+                {isUpcoming && <UpcomingState meetingId={meetingId} onCancelMeeting={() => { }} isCancelling={false} />}
             </div>
         </>
     );
