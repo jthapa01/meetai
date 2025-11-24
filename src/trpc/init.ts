@@ -2,34 +2,27 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { cache } from "react";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-
-type TRPCContext = {
-  headers: Headers;
-};
+import { db } from "@/db";
+import { agents, meetings } from "@/db/schema";
+import { polarClient } from "@/lib/polar";
+import {
+  MAX_FREE_AGENTS,
+  MAX_FREE_MEETINGS,
+} from "@/modules/premium/constants";
+import { eq, count } from "drizzle-orm";
 
 export const createTRPCContext = cache(async () => {
   /**
    * @see: https://trpc.io/docs/server/context
    */
-  try {
-    const headersList = await headers();
-    return {
-      headers: headersList,
-    };
-  } catch (error) {
-    // Fallback for when headers() fails during build or SSR
-    console.warn("Failed to get headers in tRPC context:", error);
-    return {
-      headers: new Headers(),
-    };
-  }
+  return { userId: "user_123" };
 });
 
 // Avoid exporting the entire t-object
 // since it's not very descriptive.
 // For instance, the use of a t variable
 // is common in i18n libraries.
-const t = initTRPC.context<TRPCContext>().create({
+const t = initTRPC.create({
   /**
    * @see https://trpc.io/docs/server/data-transformers
    */
@@ -41,33 +34,60 @@ export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
 export const baseProcedure = t.procedure;
 export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
-  try {
-    const session = await auth.api.getSession({
-      headers: ctx.headers,
-    });
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
 
-    if (!session) {
-      throw new TRPCError({ code: "UNAUTHORIZED", message: "Unauthorized" });
-    }
-
-    return next({ ctx: { ...ctx, auth: session } });
-  } catch (error) {
-    console.error("Auth error in protectedProcedure:", error);
+  if (!session) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Unauthorized" });
   }
+
+  return next({ ctx: { ...ctx, auth: session } });
 });
 
-export const optionalProtectedProcedure = baseProcedure.use(
-  async ({ ctx, next }) => {
-    try {
-      const session = await auth.api.getSession({
-        headers: ctx.headers,
-      });
+// paywall middleware that gates resource creation
+export const premiumProcedure = (entity: "meetings" | "agents") =>
+  protectedProcedure.use(async ({ ctx, next }) => {
+    const customer = await polarClient.customers.getStateExternal({
+      externalId: ctx.auth.user.id,
+    });
 
-      return next({ ctx: { ...ctx, auth: session || null } });
-    } catch (error) {
-      console.error("Auth error in optionalProtectedProcedure:", error);
-      return next({ ctx: { ...ctx, auth: null } });
+    const [userMeetings] = await db
+      .select({
+        used: count(meetings.id),
+      })
+      .from(meetings)
+      .where(eq(meetings.userId, ctx.auth.user.id));
+
+    const [userAgents] = await db
+      .select({
+        used: count(agents.id),
+      })
+      .from(agents)
+      .where(eq(agents.userId, ctx.auth.user.id));
+
+    const isPremium = customer.activeSubscriptions.length > 0;
+    const isFreeAgentLimitReached = userAgents.used >= MAX_FREE_AGENTS;
+    const isFreeMeetingLimitReached = userMeetings.used >= MAX_FREE_MEETINGS;
+
+    const shouldThrowMeetingError =
+      entity === "meetings" && !isPremium && isFreeMeetingLimitReached;
+    const shouldThrowAgentError =
+      entity === "agents" && !isPremium && isFreeAgentLimitReached;
+
+    if (shouldThrowMeetingError) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Free meeting limit reached. Please upgrade to premium.",
+      });
     }
-  }
-);
+
+    if (shouldThrowAgentError) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Free agent limit reached. Please upgrade to premium.",
+      });
+    }
+
+    return next({ ctx: { ...ctx, customer } });
+  });

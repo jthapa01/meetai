@@ -13,6 +13,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { MeetingGetOne } from "../../types";
 import { meetingInsertSchema } from "../../schemas";
 import { NewAgentDialog } from "@/modules/agents/ui/components/new-agent-dialog";
+import { useRouter } from 'next/navigation';
 
 interface MeetingFormProps {
     onSuccess?: (id?: string) => void;
@@ -22,6 +23,7 @@ interface MeetingFormProps {
 
 export const MeetingForm = ({ onSuccess, onCancel, initialValues, }: MeetingFormProps) => {
     const trpc = useTRPC();
+    const router = useRouter();
     const queryClient = useQueryClient();
     const [isAgentDialogOpen, setIsAgentDialogOpen] = useState(false);
     const [agentSearch, setAgentSearch] = useState("");
@@ -34,12 +36,14 @@ export const MeetingForm = ({ onSuccess, onCancel, initialValues, }: MeetingForm
         trpc.meetings.create.mutationOptions({
             onSuccess: async (data) => {
                 await queryClient.invalidateQueries(trpc.meetings.getMany.queryOptions({}));
-                // TODO: Invalidate free tier usage
+                await queryClient.invalidateQueries(trpc.premium.getFreeUsage.queryOptions(),);
                 onSuccess?.(data.id);
             },
             onError: (error) => {
                 toast.error(`Error creating meeting: ${error.message}`);
-                // TODO: Check if error code is "FORBIDDEN", redirect to "/upgrade"
+                if(error.data?.code === "FORBIDDEN") {
+                    router.push("/upgrade");
+                }
             },
         }),
     );
@@ -56,7 +60,6 @@ export const MeetingForm = ({ onSuccess, onCancel, initialValues, }: MeetingForm
             },
             onError: (error) => { 
                 toast.error(error.message);
-                // TODO: Check if error code is "FORBIDDEN", redirect to "/upgrade"
             },
         }),
     );
